@@ -12,7 +12,7 @@ path = "native/lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.21", features = ["extension-module"] }
+pyo3 = { version = "0.23", features = ["extension-module"] }
 scraper = "0.19"
 ego-tree = "0.6"
 
