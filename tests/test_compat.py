@@ -452,11 +452,13 @@ def test_self_closing_tags():
 
 def test_multiple_parsers_all_accepted():
     """All parser names must be accepted (they all map to html5ever)."""
-    parsers = ["html.parser", "html5lib"]
-    if not os.environ.get("BS4_MODE"):
-        # xhtml accepts "lxml" as an alias for its html5ever backend.
-        # In BS4_MODE, bs4 would try to actually use lxml — skip if not installed.
-        parsers.append("lxml")
+    if os.environ.get("BS4_MODE"):
+        # In BS4_MODE, bs4 actually loads the named parser library. Only
+        # html.parser is guaranteed present in CI — skip lxml / html5lib.
+        parsers = ["html.parser"]
+    else:
+        # xhtml aliases all three to its internal html5ever backend.
+        parsers = ["html.parser", "lxml", "html5lib"]
     for parser in parsers:
         s = Xhtml("<p>ok</p>", parser)
         assert s.find("p") is not None
