@@ -1,0 +1,43 @@
+# Rust build artifacts
+/target/
+/.build/
+Cargo.lock
+
+# Compiled Python extension (built by maturin)
+xhtml/_core*.so
+xhtml/_core*.pyd
+xhtml/*.so
+xhtml/*.pyd
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+.env
+pip-wheel-metadata/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+benchmark_results.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# maturin
+.maturin/

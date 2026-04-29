@@ -1,0 +1,64 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "xhtml"
+version = "0.1.0"
+description = "Fast, ergonomic HTML parsing for Python with a Rust core and Pydantic extraction"
+authors = [{ name = "Bruno Lima", email = "hello@xhtml.dev" }]
+license = { text = "MIT" }
+readme = "README.md"
+keywords = ["html", "parser", "scraping", "rust", "performance", "pydantic", "extraction"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Rust",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Markup :: HTML",
+    "Topic :: Text Processing :: Markup :: XML",
+    "Typing :: Typed",
+]
+requires-python = ">=3.8"
+dependencies = ["pydantic>=2.0"]
+
+[project.optional-dependencies]
+# Install the full dev/test stack with: pip install xhtml[dev]
+dev = ["pytest>=7", "maturin>=1.5"]
+
+[project.urls]
+Homepage = "https://github.com/LimaBD/xhtml"
+Repository = "https://github.com/LimaBD/xhtml"
+Documentation = "https://github.com/LimaBD/xhtml#readme"
+"Bug Tracker" = "https://github.com/LimaBD/xhtml/issues"
+Changelog = "https://github.com/LimaBD/xhtml/blob/main/CHANGELOG.md"
+
+[tool.maturin]
+# The compiled Rust extension is exposed as xhtml._core
+module-name = "xhtml._core"
+# Python source lives at the project root
+python-source = "."
+features = ["pyo3/extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.mypy]
+python_version = "3.8"
+strict = false
+ignore_missing_imports = true

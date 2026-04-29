@@ -1,0 +1,165 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ─── Rust linting & tests ────────────────────────────────────────────────
+  rust-check:
+    name: Rust check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: cargo build
+        run: cargo build --release
+
+  # ─── Python tests ────────────────────────────────────────────────────────
+  python-tests:
+    name: Python tests (Py${{ matrix.python-version }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: rust-check
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
+        exclude:
+          # Reduce matrix size for minor OS/version combos
+          - os: macos-latest
+            python-version: "3.8"
+          - os: windows-latest
+            python-version: "3.8"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-py${{ matrix.python-version }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Install maturin
+        run: pip install "maturin>=1.5,<2.0"
+
+      - name: Build & install xhtml (dev mode)
+        run: maturin develop --release
+
+      - name: Install test dependencies
+        run: pip install pytest beautifulsoup4
+
+      - name: Run tests
+        run: python -m pytest tests/ -v --tb=short
+
+  # ─── Compatibility cross-check (xhtml == bs4) ─────────────────────────
+  compat-check:
+    name: BS4 compatibility cross-check
+    runs-on: ubuntu-latest
+    needs: python-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install maturin
+        run: pip install "maturin>=1.5,<2.0"
+
+      - name: Build & install xhtml
+        run: maturin develop --release
+
+      - name: Install dependencies
+        run: pip install pytest beautifulsoup4
+
+      - name: Run compat tests against xhtml
+        run: python -m pytest tests/test_compat.py -v
+
+      - name: Run compat tests against bs4 (reference)
+        run: BS4_MODE=1 python -m pytest tests/test_compat.py -v
+
+  # ─── Benchmarks (informational, non-blocking) ────────────────────────────
+  benchmark:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    needs: python-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install maturin
+        run: pip install "maturin>=1.5,<2.0"
+
+      - name: Build & install xhtml
+        run: maturin develop --release
+
+      - name: Install benchmark dependencies
+        run: pip install beautifulsoup4
+
+      - name: Run benchmarks (50 iterations)
+        run: python tests/benchmark.py --iterations 50
+
+      - name: Run benchmarks (JSON output)
+        run: python tests/benchmark.py --iterations 50 --json > benchmark_results.json
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark_results.json

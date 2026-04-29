@@ -1,0 +1,3 @@
+[build]
+# Keep Cargo build artefacts out of the project root
+target-dir = ".build/cargo"
