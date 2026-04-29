@@ -87,13 +87,14 @@ jobs:
       - name: Install maturin
         run: pip install "maturin>=1.5,<2.0"
 
-      - name: Build & install xhtml
-        run: |
-          maturin build --release --out dist
-          pip install --no-index --find-links dist/ xhtml
+      - name: Build xhtml wheel
+        run: maturin build --release --out dist
 
       - name: Install test dependencies
-        run: pip install pytest beautifulsoup4
+        run: pip install pytest beautifulsoup4 "pydantic>=2.0"
+
+      - name: Install xhtml wheel
+        run: pip install --no-index --find-links dist/ xhtml
 
       - name: Run tests
         run: python -m pytest tests/ -v --tb=short
@@ -117,13 +118,14 @@ jobs:
       - name: Install maturin
         run: pip install "maturin>=1.5,<2.0"
 
-      - name: Build & install xhtml
-        run: |
-          maturin build --release --out dist
-          pip install --no-index --find-links dist/ xhtml
+      - name: Build xhtml wheel
+        run: maturin build --release --out dist
 
       - name: Install dependencies
-        run: pip install pytest beautifulsoup4
+        run: pip install pytest beautifulsoup4 "pydantic>=2.0"
+
+      - name: Install xhtml wheel
+        run: pip install --no-index --find-links dist/ xhtml
 
       - name: Run compat tests against xhtml
         run: python -m pytest tests/test_compat.py -v
@@ -150,13 +152,14 @@ jobs:
       - name: Install maturin
         run: pip install "maturin>=1.5,<2.0"
 
-      - name: Build & install xhtml
-        run: |
-          maturin build --release --out dist
-          pip install --no-index --find-links dist/ xhtml
+      - name: Build xhtml wheel
+        run: maturin build --release --out dist
 
       - name: Install benchmark dependencies
-        run: pip install beautifulsoup4
+        run: pip install beautifulsoup4 "pydantic>=2.0"
+
+      - name: Install xhtml wheel
+        run: pip install --no-index --find-links dist/ xhtml
 
       - name: Run benchmarks (50 iterations)
         run: python tests/benchmark.py --iterations 50

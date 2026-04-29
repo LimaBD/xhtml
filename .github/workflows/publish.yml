@@ -113,11 +113,11 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Install test deps
+        run: pip install pytest beautifulsoup4 "pydantic>=2.0"
+
       - name: Install wheel
         run: pip install xhtml --no-index --find-links dist/
-
-      - name: Install test deps
-        run: pip install pytest beautifulsoup4
 
       - name: Run tests
         run: python -m pytest tests/ -v --tb=short
