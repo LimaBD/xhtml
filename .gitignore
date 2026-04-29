@@ -3,10 +3,10 @@
 /.build/
 
 # Compiled Python extension (built by maturin)
-xhtml/_core*.so
-xhtml/_core*.pyd
-xhtml/*.so
-xhtml/*.pyd
+src/xhtml/_core*.so
+src/xhtml/_core*.pyd
+src/xhtml/*.so
+src/xhtml/*.pyd
 
 # Python
 __pycache__/

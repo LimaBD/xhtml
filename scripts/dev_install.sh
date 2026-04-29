@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/dev_install.sh
 # Install xhtml in editable/development mode.
-# The Rust extension is compiled and placed into xhtml/ automatically.
+# The Rust extension is compiled and placed into src/xhtml/ automatically.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

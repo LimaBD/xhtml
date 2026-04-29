@@ -46,8 +46,9 @@ Changelog = "https://github.com/LimaBD/xhtml/blob/main/CHANGELOG.md"
 [tool.maturin]
 # The compiled Rust extension is exposed as xhtml._core
 module-name = "xhtml._core"
-# Python source lives at the project root
-python-source = "."
+# Python source lives under src/ (prevents source-tree from shadowing the
+# installed wheel when running tests from the project root)
+python-source = "src"
 features = ["pyo3/extension-module", "pyo3/abi3-py38"]
 
 [tool.pytest.ini_options]

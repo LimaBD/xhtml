@@ -406,11 +406,12 @@ xhtml/
 ├── native/
 │   ├── lib.rs                ← PyO3 module: RustDocument, RustNode, RustQuery
 │   └── query.rs              ← DFS search engine + CSS match logic
-├── xhtml/
-│   ├── __init__.py           ← Public API surface
-│   ├── element.py            ← Tag, NavigableString, Xhtml wrappers
-│   ├── extract.py            ← Pydantic-based structured extraction
-│   └── _compat.py            ← Compatibility aliases
+├── src/
+│   └── xhtml/
+│       ├── __init__.py       ← Public API surface
+│       ├── element.py        ← Tag, NavigableString, Xhtml wrappers
+│       ├── extract.py        ← Pydantic-based structured extraction
+│       └── _compat.py        ← Compatibility aliases
 ├── tests/
 │   ├── conftest.py           ← Shared fixtures & HTML samples
 │   ├── test_compat.py        ← Parser API tests (dual-mode: xhtml + bs4)
