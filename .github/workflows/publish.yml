@@ -61,7 +61,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
-          args: --release --out dist --find-interpreter
+          args: --release --out dist
           sccache: "true"
 
       - name: Upload wheel artifact
