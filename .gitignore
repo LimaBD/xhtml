@@ -1,7 +1,6 @@
 # Rust build artifacts
 /target/
 /.build/
-Cargo.lock
 
 # Compiled Python extension (built by maturin)
 xhtml/_core*.so

@@ -33,7 +33,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
+            .build/cargo
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
@@ -80,15 +80,17 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
+            .build/cargo
           key: ${{ runner.os }}-py${{ matrix.python-version }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Install maturin
         run: pip install "maturin>=1.5,<2.0"
 
-      - name: Build & install xhtml (dev mode)
-        run: maturin develop --release
+      - name: Build & install xhtml
+        run: |
+          maturin build --release --out dist
+          pip install --no-index --find-links dist/ xhtml
 
       - name: Install test dependencies
         run: pip install pytest beautifulsoup4
@@ -116,7 +118,9 @@ jobs:
         run: pip install "maturin>=1.5,<2.0"
 
       - name: Build & install xhtml
-        run: maturin develop --release
+        run: |
+          maturin build --release --out dist
+          pip install --no-index --find-links dist/ xhtml
 
       - name: Install dependencies
         run: pip install pytest beautifulsoup4
@@ -147,7 +151,9 @@ jobs:
         run: pip install "maturin>=1.5,<2.0"
 
       - name: Build & install xhtml
-        run: maturin develop --release
+        run: |
+          maturin build --release --out dist
+          pip install --no-index --find-links dist/ xhtml
 
       - name: Install benchmark dependencies
         run: pip install beautifulsoup4
