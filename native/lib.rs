@@ -1,7 +1,7 @@
-use pyo3::prelude::*;
-use scraper::{Html, Selector, ElementRef};
-use scraper::node::Node;
 use ego_tree::NodeId;
+use pyo3::prelude::*;
+use scraper::node::Node;
+use scraper::{ElementRef, Html, Selector};
 use std::rc::Rc;
 
 mod query;
@@ -25,9 +25,9 @@ pub struct RustNode {
 #[pyclass]
 #[derive(Clone, Debug)]
 pub struct RustQuery {
-    pub(crate) names: Vec<String>,                    // tag names to match (empty = any)
-    pub(crate) attrs: Vec<(String, Vec<String>)>,     // (attr_name, [possible_values])
-    pub(crate) classes: Vec<String>,                  // ALL must be present
+    pub(crate) names: Vec<String>, // tag names to match (empty = any)
+    pub(crate) attrs: Vec<(String, Vec<String>)>, // (attr_name, [possible_values])
+    pub(crate) classes: Vec<String>, // ALL must be present
     pub(crate) id: Option<String>,
     pub(crate) recursive: bool,
 }

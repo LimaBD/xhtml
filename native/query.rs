@@ -1,5 +1,5 @@
-use scraper::{ElementRef, Html};
 use ego_tree::NodeId;
+use scraper::{ElementRef, Html};
 use std::rc::Rc;
 
 use crate::{RustNode, RustQuery};
@@ -120,8 +120,7 @@ fn matches_query(el: &ElementRef<'_>, query: &RustQuery) -> bool {
         match el.value().attr(attr_name.as_str()) {
             None => return false,
             Some(val) => {
-                if !possible_values.is_empty()
-                    && !possible_values.iter().any(|v| v.as_str() == val)
+                if !possible_values.is_empty() && !possible_values.iter().any(|v| v.as_str() == val)
                 {
                     return false;
                 }
