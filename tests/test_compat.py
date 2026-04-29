@@ -178,7 +178,10 @@ def test_find_all_returns_empty_list(soup):
 
 
 def test_find_all_multi_class(multi):
-    els = multi.find_all(class_="foo bar")
+    # Use CSS selector — both BS4 and xhtml handle .foo.bar as an AND query.
+    # Passing class_="foo bar" as a string is ambiguous across BS4 versions
+    # (older: multi-class AND; newer: exact-string match).
+    els = multi.select(".foo.bar")
     assert len(els) == 2  # <p class="foo bar baz"> and <p class="foo bar">
 
 
@@ -340,7 +343,9 @@ def test_parent_chain(soup):
 
 def test_children_contains_tags(soup):
     ul = soup.find("ul")
-    tags = [c for c in ul.children if hasattr(c, "name")]
+    # BS4 NavigableString has name=None; xhtml NavigableString has no name at all.
+    # Use getattr(..., None) to correctly exclude text nodes in both libraries.
+    tags = [c for c in ul.children if getattr(c, "name", None) is not None]
     li_names = [t.name for t in tags]
     assert all(n == "li" for n in li_names)
     assert len(li_names) == 3
@@ -447,7 +452,12 @@ def test_self_closing_tags():
 
 def test_multiple_parsers_all_accepted():
     """All parser names must be accepted (they all map to html5ever)."""
-    for parser in ("html.parser", "lxml", "html5lib"):
+    parsers = ["html.parser", "html5lib"]
+    if not os.environ.get("BS4_MODE"):
+        # xhtml accepts "lxml" as an alias for its html5ever backend.
+        # In BS4_MODE, bs4 would try to actually use lxml — skip if not installed.
+        parsers.append("lxml")
+    for parser in parsers:
         s = Xhtml("<p>ok</p>", parser)
         assert s.find("p") is not None
 
