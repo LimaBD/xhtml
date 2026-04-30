@@ -386,13 +386,19 @@ impl RustNode {
     /// Next node in document (DFS pre) order, or None.
     fn next_element_node(&self) -> Option<RustNode> {
         let id = next_element_id(&self.html, self.node_id)?;
-        Some(RustNode { html: Rc::clone(&self.html), node_id: id })
+        Some(RustNode {
+            html: Rc::clone(&self.html),
+            node_id: id,
+        })
     }
 
     /// Previous node in document (DFS pre) order, or None.
     fn previous_element_node(&self) -> Option<RustNode> {
         let id = previous_element_id(&self.html, self.node_id)?;
-        Some(RustNode { html: Rc::clone(&self.html), node_id: id })
+        Some(RustNode {
+            html: Rc::clone(&self.html),
+            node_id: id,
+        })
     }
 
     /// All ancestor nodes from immediate parent up to (and including) the
@@ -408,7 +414,10 @@ impl RustNode {
             match node.parent() {
                 Some(parent) => {
                     let parent_id = parent.id();
-                    result.push(RustNode { html: Rc::clone(&self.html), node_id: parent_id });
+                    result.push(RustNode {
+                        html: Rc::clone(&self.html),
+                        node_id: parent_id,
+                    });
                     cur_id = parent_id;
                 }
                 None => break,
@@ -432,13 +441,22 @@ impl RustNode {
             };
             let parent_id = parent.id();
             // Stop at ego_tree root
-            if self.html.tree.get(parent_id).and_then(|n| n.parent()).is_none() {
+            if self
+                .html
+                .tree
+                .get(parent_id)
+                .and_then(|n| n.parent())
+                .is_none()
+            {
                 break;
             }
             if let Some(parent_node) = self.html.tree.get(parent_id) {
                 if let Some(el) = ElementRef::wrap(parent_node) {
                     if query::matches_query(&el, query) {
-                        result.push(RustNode { html: Rc::clone(&self.html), node_id: parent_id });
+                        result.push(RustNode {
+                            html: Rc::clone(&self.html),
+                            node_id: parent_id,
+                        });
                         if limit > 0 && result.len() >= limit {
                             return result;
                         }
@@ -462,7 +480,10 @@ impl RustNode {
             if let Some(node) = self.html.tree.get(cur_id) {
                 if let Some(el) = ElementRef::wrap(node) {
                     if query::matches_query(&el, query) {
-                        results.push(RustNode { html: Rc::clone(&self.html), node_id: cur_id });
+                        results.push(RustNode {
+                            html: Rc::clone(&self.html),
+                            node_id: cur_id,
+                        });
                         if limit > 0 && results.len() >= limit {
                             return results;
                         }
@@ -488,7 +509,10 @@ impl RustNode {
             if let Some(node) = self.html.tree.get(cur_id) {
                 if let Some(el) = ElementRef::wrap(node) {
                     if query::matches_query(&el, query) {
-                        results.push(RustNode { html: Rc::clone(&self.html), node_id: cur_id });
+                        results.push(RustNode {
+                            html: Rc::clone(&self.html),
+                            node_id: cur_id,
+                        });
                         if limit > 0 && results.len() >= limit {
                             return results;
                         }
@@ -505,21 +529,30 @@ impl RustNode {
     /// Next siblings that match `query`.  Returns in forward order.
     fn find_next_siblings_q(&self, query: &RustQuery, limit: usize) -> Vec<RustNode> {
         let mut results = Vec::new();
-        let mut cur_opt = self.html.tree.get(self.node_id)
+        let mut cur_opt = self
+            .html
+            .tree
+            .get(self.node_id)
             .and_then(|n| n.next_sibling())
             .map(|s| s.id());
         while let Some(cur_id) = cur_opt {
             if let Some(node) = self.html.tree.get(cur_id) {
                 if let Some(el) = ElementRef::wrap(node) {
                     if query::matches_query(&el, query) {
-                        results.push(RustNode { html: Rc::clone(&self.html), node_id: cur_id });
+                        results.push(RustNode {
+                            html: Rc::clone(&self.html),
+                            node_id: cur_id,
+                        });
                         if limit > 0 && results.len() >= limit {
                             return results;
                         }
                     }
                 }
             }
-            cur_opt = self.html.tree.get(cur_id)
+            cur_opt = self
+                .html
+                .tree
+                .get(cur_id)
                 .and_then(|n| n.next_sibling())
                 .map(|s| s.id());
         }
@@ -529,21 +562,30 @@ impl RustNode {
     /// Previous siblings that match `query`.  Returns closest-first.
     fn find_prev_siblings_q(&self, query: &RustQuery, limit: usize) -> Vec<RustNode> {
         let mut results = Vec::new();
-        let mut cur_opt = self.html.tree.get(self.node_id)
+        let mut cur_opt = self
+            .html
+            .tree
+            .get(self.node_id)
             .and_then(|n| n.prev_sibling())
             .map(|s| s.id());
         while let Some(cur_id) = cur_opt {
             if let Some(node) = self.html.tree.get(cur_id) {
                 if let Some(el) = ElementRef::wrap(node) {
                     if query::matches_query(&el, query) {
-                        results.push(RustNode { html: Rc::clone(&self.html), node_id: cur_id });
+                        results.push(RustNode {
+                            html: Rc::clone(&self.html),
+                            node_id: cur_id,
+                        });
                         if limit > 0 && results.len() >= limit {
                             return results;
                         }
                     }
                 }
             }
-            cur_opt = self.html.tree.get(cur_id)
+            cur_opt = self
+                .html
+                .tree
+                .get(cur_id)
                 .and_then(|n| n.prev_sibling())
                 .map(|s| s.id());
         }
@@ -554,13 +596,22 @@ impl RustNode {
     /// Used by the Python layer for callable-filter searches.
     fn all_descendants(&self) -> Vec<RustNode> {
         let mut results = Vec::new();
-        let seed: Vec<NodeId> = self.html.tree.get(self.node_id)
+        let seed: Vec<NodeId> = self
+            .html
+            .tree
+            .get(self.node_id)
             .map(|n| n.children().map(|c| c.id()).collect::<Vec<_>>())
             .unwrap_or_default();
         let mut stack: Vec<NodeId> = seed.into_iter().rev().collect();
         while let Some(id) = stack.pop() {
-            results.push(RustNode { html: Rc::clone(&self.html), node_id: id });
-            let children: Vec<NodeId> = self.html.tree.get(id)
+            results.push(RustNode {
+                html: Rc::clone(&self.html),
+                node_id: id,
+            });
+            let children: Vec<NodeId> = self
+                .html
+                .tree
+                .get(id)
                 .map(|n| n.children().map(|c| c.id()).collect::<Vec<_>>())
                 .unwrap_or_default();
             stack.extend(children.into_iter().rev());
