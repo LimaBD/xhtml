@@ -23,6 +23,161 @@ from typing import (
 from xhtml._core import RustDocument, RustNode, RustQuery  # type: ignore[import]
 
 
+# ─── ResultSet ───────────────────────────────────────────────────────────────
+
+class ResultSet(list):
+    """
+    A list subclass returned by find_all() / find_all_next() / etc.
+    Mirrors BeautifulSoup4's ResultSet — carries a reference to the
+    originating tag via the `source` attribute.
+    """
+
+    def __init__(self, source: Any, result: Iterable = ()):
+        super().__init__(result)
+        self.source = source
+
+    def __repr__(self) -> str:  # type: ignore[override]
+        return f"[{', '.join(repr(i) for i in self)}]"
+
+
+# ─── HTML void/empty elements ────────────────────────────────────────────────
+
+_VOID_ELEMENTS = frozenset({
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+})
+
+
+# ─── Pure-Python tag filter ──────────────────────────────────────────────────
+
+def _matches_filter(
+    node: Any,
+    name: Any,
+    attrs: Optional[Dict[str, Any]],
+    kwargs: Optional[Dict[str, Any]],
+) -> bool:
+    """
+    Pure-Python tag matcher — used for find_next / find_previous and
+    other navigation helpers that operate on pre-fetched Python Tag objects.
+    Accepts the same argument shapes as find() / find_all().
+    """
+    if not isinstance(node, Tag):
+        return False
+
+    attrs = dict(attrs or {})
+    kwargs = dict(kwargs or {})
+
+    # --- tag name ---
+    if name is not None and name is not True:
+        if isinstance(name, str):
+            if node.name != name:
+                return False
+        elif isinstance(name, (list, tuple)):
+            if node.name not in name:
+                return False
+        elif callable(name) and not isinstance(name, type):
+            if not name(node):
+                return False
+        elif hasattr(name, "search"):  # compiled regex
+            if not name.search(node.name):
+                return False
+
+    # --- merge attrs + kwargs, handle class_ alias ---
+    all_attrs: Dict[str, Any] = {**attrs, **kwargs}
+    class_val = all_attrs.pop("class_", all_attrs.pop("class", None))
+    id_val = all_attrs.pop("id", None)
+
+    # --- id ---
+    if id_val is not None and id_val is not True:
+        if hasattr(id_val, "search"):
+            if not id_val.search(node.get("id", "") or ""):
+                return False
+        else:
+            if node.get("id") != str(id_val):
+                return False
+    elif id_val is True:
+        if not node.has_attr("id"):
+            return False
+
+    # --- class ---
+    if class_val is not None and class_val is not True:
+        tag_classes: List[str] = node.get("class") or []
+        if hasattr(class_val, "search"):
+            cls_str = " ".join(tag_classes)
+            if not class_val.search(cls_str):
+                return False
+        elif isinstance(class_val, str):
+            required = class_val.split()
+            if not all(c in tag_classes for c in required):
+                return False
+        elif isinstance(class_val, (list, tuple)):
+            if not all(c in tag_classes for c in class_val):
+                return False
+    elif class_val is True:
+        if not node.has_attr("class"):
+            return False
+
+    # --- other attributes ---
+    for k, v in all_attrs.items():
+        if v is True:
+            if not node.has_attr(k):
+                return False
+        elif v is False or v is None:
+            if node.has_attr(k):
+                return False
+        elif hasattr(v, "search"):
+            attr_val = node.get(k)
+            if attr_val is None or not v.search(str(attr_val)):
+                return False
+        elif isinstance(v, str):
+            if node.get(k) != v:
+                return False
+        elif isinstance(v, (list, tuple)):
+            if node.get(k) not in [str(x) for x in v]:
+                return False
+        else:
+            if node.get(k) != str(v):
+                return False
+
+    return True
+
+
+# ─── Node wrapping / query helpers ──────────────────────────────────────────
+
+def _wrap_node(rust_node: RustNode) -> Any:
+    """Wrap a RustNode in the appropriate Python class."""
+    return Tag(rust_node) if rust_node.is_tag() else NavigableString(rust_node=rust_node)
+
+
+def _is_simple_query(
+    name: Any,
+    attrs: Optional[Dict[str, Any]],
+    kwargs: Optional[Dict[str, Any]],
+) -> bool:
+    """
+    Return True when the query contains no callable or regex values — the Rust
+    engine can execute it entirely without Python post-filtering.
+    """
+    if name is not None and name is not True:
+        if callable(name) and not isinstance(name, type):
+            return False
+        if hasattr(name, "search"):
+            return False
+    for v in list((attrs or {}).values()) + list((kwargs or {}).values()):
+        if hasattr(v, "search") or (callable(v) and not isinstance(v, type)):
+            return False
+    return True
+
+
+# ─── Mutation stub message ───────────────────────────────────────────────────
+
+_MUTATION_MSG = (
+    "xhtml v0.x: in-place tree modification is not yet supported. "
+    "The Rust core uses a read-optimised immutable tree. "
+    "Tree mutation support is planned for a future version."
+)
+
+
 # ─── Query normalisation ─────────────────────────────────────────────────────
 
 def _normalize_query(
@@ -189,13 +344,280 @@ class NavigableString(str):
             return Tag(sib) if sib.is_tag() else NavigableString(rust_node=sib)
         return None
 
+    # ── BS4-parity: NavigableString has name=None ─────────────────────────────
+
+    @property
+    def name(self) -> None:  # type: ignore[override]
+        return None
+
+    @property
+    def hidden(self) -> bool:
+        return False
+
+    # ── Text ──────────────────────────────────────────────────────────────────
+
     def get_text(self, separator: str = "", strip: bool = False) -> str:
         text = str(self)
         return text.strip() if strip else text
 
+    # aliases
+    getText = get_text
+
     @property
     def text(self) -> str:
         return str(self)
+
+    @property
+    def string(self) -> "NavigableString":
+        return self
+
+    @property
+    def strings(self) -> Iterator[str]:
+        yield str(self)
+
+    @property
+    def stripped_strings(self) -> Iterator[str]:
+        s = str(self).strip()
+        if s:
+            yield s
+
+    # ── Sibling iterators ─────────────────────────────────────────────────────
+
+    @property
+    def next_siblings(self) -> Iterator[Any]:
+        if self._node:
+            for sib in self._node.next_siblings():
+                yield Tag(sib) if sib.is_tag() else NavigableString(rust_node=sib)
+
+    @property
+    def previous_siblings(self) -> Iterator[Any]:
+        if self._node:
+            for sib in self._node.prev_siblings():
+                yield Tag(sib) if sib.is_tag() else NavigableString(rust_node=sib)
+
+    # ── Document-order navigation ─────────────────────────────────────────────
+
+    @property
+    def next_element(self) -> Optional[Any]:
+        if not self._node:
+            return None
+        n = self._node.next_element_node()
+        return _wrap_node(n) if n is not None else None
+
+    @property
+    def previous_element(self) -> Optional[Any]:
+        if not self._node:
+            return None
+        n = self._node.previous_element_node()
+        return _wrap_node(n) if n is not None else None
+
+    @property
+    def next_elements(self) -> Iterator[Any]:
+        nxt: Any = self.next_element
+        while nxt is not None:
+            yield nxt
+            nxt = nxt.next_element
+
+    @property
+    def previous_elements(self) -> Iterator[Any]:
+        prev: Any = self.previous_element
+        while prev is not None:
+            yield prev
+            prev = prev.previous_element
+
+    # ── Parent navigation ─────────────────────────────────────────────────────
+
+    @property
+    def parents(self) -> Iterator["Tag"]:
+        if self._node:
+            for n in self._node.ancestors_list():
+                yield Tag(n)
+
+    def find_parent(
+        self,
+        name: Any = None,
+        attrs: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Optional["Tag"]:
+        if self._node and _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_ancestors_q(q, 1)
+            return Tag(nodes[0]) if nodes else None
+        for par in self.parents:
+            if _matches_filter(par, name, attrs, kwargs):
+                return par
+        return None
+
+    def find_parents(
+        self,
+        name: Any = None,
+        attrs: Optional[Dict[str, Any]] = None,
+        limit: int = 0,
+        **kwargs: Any,
+    ) -> "ResultSet":
+        if self._node and _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_ancestors_q(q, limit)
+            return ResultSet(self, [Tag(n) for n in nodes])
+        results: List[Tag] = []
+        for par in self.parents:
+            if _matches_filter(par, name, attrs, kwargs):
+                results.append(par)
+                if limit and len(results) >= limit:
+                    break
+        return ResultSet(self, results)
+
+    # ── Forward/backward document-order search ────────────────────────────────
+
+    def find_next(
+        self,
+        name: Any = None,
+        attrs: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Optional["Tag"]:
+        if self._node and _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_next_nodes(q, 1)
+            return Tag(nodes[0]) if nodes else None
+        for el in self.next_elements:
+            if _matches_filter(el, name, attrs, kwargs):
+                return el  # type: ignore[return-value]
+        return None
+
+    def find_all_next(
+        self,
+        name: Any = None,
+        attrs: Optional[Dict[str, Any]] = None,
+        limit: int = 0,
+        **kwargs: Any,
+    ) -> "ResultSet":
+        if self._node and _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_next_nodes(q, limit)
+            return ResultSet(self, [Tag(n) for n in nodes])
+        results: List[Tag] = []
+        for el in self.next_elements:
+            if _matches_filter(el, name, attrs, kwargs):
+                results.append(el)  # type: ignore[arg-type]
+                if limit and len(results) >= limit:
+                    break
+        return ResultSet(self, results)
+
+    def find_previous(
+        self,
+        name: Any = None,
+        attrs: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Optional["Tag"]:
+        if self._node and _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_previous_nodes(q, 1)
+            return Tag(nodes[0]) if nodes else None
+        for el in self.previous_elements:
+            if _matches_filter(el, name, attrs, kwargs):
+                return el  # type: ignore[return-value]
+        return None
+
+    def find_all_previous(
+        self,
+        name: Any = None,
+        attrs: Optional[Dict[str, Any]] = None,
+        limit: int = 0,
+        **kwargs: Any,
+    ) -> "ResultSet":
+        if self._node and _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_previous_nodes(q, limit)
+            return ResultSet(self, [Tag(n) for n in nodes])
+        results: List[Tag] = []
+        for el in self.previous_elements:
+            if _matches_filter(el, name, attrs, kwargs):
+                results.append(el)  # type: ignore[arg-type]
+                if limit and len(results) >= limit:
+                    break
+        return ResultSet(self, results)
+
+    # ── Sibling search ────────────────────────────────────────────────────────
+
+    def find_next_sibling(
+        self,
+        name: Any = None,
+        attrs: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Optional["Tag"]:
+        if self._node and _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_next_siblings_q(q, 1)
+            return Tag(nodes[0]) if nodes else None
+        for sib in self.next_siblings:
+            if _matches_filter(sib, name, attrs, kwargs):
+                return sib  # type: ignore[return-value]
+        return None
+
+    def find_next_siblings(
+        self,
+        name: Any = None,
+        attrs: Optional[Dict[str, Any]] = None,
+        limit: int = 0,
+        **kwargs: Any,
+    ) -> "ResultSet":
+        if self._node and _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_next_siblings_q(q, limit)
+            return ResultSet(self, [Tag(n) for n in nodes])
+        results: List[Tag] = []
+        for sib in self.next_siblings:
+            if _matches_filter(sib, name, attrs, kwargs):
+                results.append(sib)  # type: ignore[arg-type]
+                if limit and len(results) >= limit:
+                    break
+        return ResultSet(self, results)
+
+    def find_previous_sibling(
+        self,
+        name: Any = None,
+        attrs: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Optional["Tag"]:
+        if self._node and _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_prev_siblings_q(q, 1)
+            return Tag(nodes[0]) if nodes else None
+        for sib in self.previous_siblings:
+            if _matches_filter(sib, name, attrs, kwargs):
+                return sib  # type: ignore[return-value]
+        return None
+
+    def find_previous_siblings(
+        self,
+        name: Any = None,
+        attrs: Optional[Dict[str, Any]] = None,
+        limit: int = 0,
+        **kwargs: Any,
+    ) -> "ResultSet":
+        if self._node and _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_prev_siblings_q(q, limit)
+            return ResultSet(self, [Tag(n) for n in nodes])
+        results: List[Tag] = []
+        for sib in self.previous_siblings:
+            if _matches_filter(sib, name, attrs, kwargs):
+                results.append(sib)  # type: ignore[arg-type]
+                if limit and len(results) >= limit:
+                    break
+        return ResultSet(self, results)
+
+    # ── Aliases (BS4 camelCase) ───────────────────────────────────────────────
+    findNext = find_next
+    findAllNext = find_all_next
+    findPrevious = find_previous
+    findAllPrevious = find_all_previous
+    findNextSibling = find_next_sibling
+    findNextSiblings = find_next_siblings
+    findPreviousSibling = find_previous_sibling
+    findPreviousSiblings = find_previous_siblings
+    findParent = find_parent
+    findParents = find_parents
 
     def __repr__(self) -> str:  # type: ignore[override]
         return repr(str(self))
@@ -367,8 +789,8 @@ class Tag:
         text: Any = None,
         limit: int = 0,
         **kwargs: Any,
-    ) -> List["Tag"]:
-        """Return a list of all matching tags."""
+    ) -> "ResultSet":
+        """Return a ResultSet of all matching tags."""
         attrs = dict(attrs or {})
         class_regex, id_regex, attrs, kwargs = _pop_regex_filters(attrs, kwargs)
 
@@ -383,7 +805,7 @@ class Tag:
                                 results.append(tag)
                                 if limit and len(results) >= limit:
                                     break
-            return results
+            return ResultSet(self, results)
 
         query = _normalize_query(name, attrs, kwargs, recursive)
         has_post = bool(text is not None or class_regex or id_regex)
@@ -401,11 +823,10 @@ class Tag:
 
         if limit:
             results_list = results_list[:limit]
-        return results_list
+        return ResultSet(self, results_list)
 
     # aliases
     findAll = find_all
-    findNext = find
 
     def find_parent(
         self,
@@ -413,11 +834,13 @@ class Tag:
         attrs: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> Optional["Tag"]:
-        parent = self.parent
-        while parent is not None:
-            if name is None or parent.name == name:
-                return parent
-            parent = parent.parent
+        if _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_ancestors_q(q, 1)
+            return Tag(nodes[0]) if nodes else None
+        for par in self.parents:
+            if _matches_filter(par, name, attrs, kwargs):
+                return par
         return None
 
     def find_parents(
@@ -426,16 +849,22 @@ class Tag:
         attrs: Optional[Dict[str, Any]] = None,
         limit: int = 0,
         **kwargs: Any,
-    ) -> List["Tag"]:
+    ) -> "ResultSet":
+        if _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_ancestors_q(q, limit)
+            return ResultSet(self, [Tag(n) for n in nodes])
         results: List[Tag] = []
-        parent = self.parent
-        while parent is not None:
-            if name is None or parent.name == name:
-                results.append(parent)
+        for par in self.parents:
+            if _matches_filter(par, name, attrs, kwargs):
+                results.append(par)
                 if limit and len(results) >= limit:
                     break
-            parent = parent.parent
-        return results
+        return ResultSet(self, results)
+
+    # BS4 camelCase aliases for parent navigation
+    findParent = find_parent
+    findParents = find_parents
 
     def find_next_sibling(
         self,
@@ -443,10 +872,13 @@ class Tag:
         attrs: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> Optional["Tag"]:
+        if _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_next_siblings_q(q, 1)
+            return Tag(nodes[0]) if nodes else None
         for sib in self.next_siblings:
-            if isinstance(sib, Tag):
-                if name is None or sib.name == name:
-                    return sib
+            if _matches_filter(sib, name, attrs, kwargs):
+                return sib  # type: ignore[return-value]
         return None
 
     def find_next_siblings(
@@ -455,15 +887,134 @@ class Tag:
         attrs: Optional[Dict[str, Any]] = None,
         limit: int = 0,
         **kwargs: Any,
-    ) -> List["Tag"]:
+    ) -> "ResultSet":
+        if _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_next_siblings_q(q, limit)
+            return ResultSet(self, [Tag(n) for n in nodes])
         results: List[Tag] = []
         for sib in self.next_siblings:
-            if isinstance(sib, Tag):
-                if name is None or sib.name == name:
-                    results.append(sib)
-                    if limit and len(results) >= limit:
-                        break
-        return results
+            if _matches_filter(sib, name, attrs, kwargs):
+                results.append(sib)  # type: ignore[arg-type]
+                if limit and len(results) >= limit:
+                    break
+        return ResultSet(self, results)
+
+    def find_previous_sibling(
+        self,
+        name: Any = None,
+        attrs: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Optional["Tag"]:
+        if _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_prev_siblings_q(q, 1)
+            return Tag(nodes[0]) if nodes else None
+        for sib in self.previous_siblings:
+            if _matches_filter(sib, name, attrs, kwargs):
+                return sib  # type: ignore[return-value]
+        return None
+
+    def find_previous_siblings(
+        self,
+        name: Any = None,
+        attrs: Optional[Dict[str, Any]] = None,
+        limit: int = 0,
+        **kwargs: Any,
+    ) -> "ResultSet":
+        if _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_prev_siblings_q(q, limit)
+            return ResultSet(self, [Tag(n) for n in nodes])
+        results: List[Tag] = []
+        for sib in self.previous_siblings:
+            if _matches_filter(sib, name, attrs, kwargs):
+                results.append(sib)  # type: ignore[arg-type]
+                if limit and len(results) >= limit:
+                    break
+        return ResultSet(self, results)
+
+    def find_next(
+        self,
+        name: Any = None,
+        attrs: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Optional["Tag"]:
+        """Find the first element following this tag in document order."""
+        if _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_next_nodes(q, 1)
+            return Tag(nodes[0]) if nodes else None
+        for el in self.next_elements:
+            if _matches_filter(el, name, attrs, kwargs):
+                return el  # type: ignore[return-value]
+        return None
+
+    def find_all_next(
+        self,
+        name: Any = None,
+        attrs: Optional[Dict[str, Any]] = None,
+        limit: int = 0,
+        **kwargs: Any,
+    ) -> "ResultSet":
+        """Find all elements following this tag in document order."""
+        if _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_next_nodes(q, limit)
+            return ResultSet(self, [Tag(n) for n in nodes])
+        results: List[Tag] = []
+        for el in self.next_elements:
+            if _matches_filter(el, name, attrs, kwargs):
+                results.append(el)  # type: ignore[arg-type]
+                if limit and len(results) >= limit:
+                    break
+        return ResultSet(self, results)
+
+    def find_previous(
+        self,
+        name: Any = None,
+        attrs: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Optional["Tag"]:
+        """Find the first element before this tag in document order."""
+        if _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_previous_nodes(q, 1)
+            return Tag(nodes[0]) if nodes else None
+        for el in self.previous_elements:
+            if _matches_filter(el, name, attrs, kwargs):
+                return el  # type: ignore[return-value]
+        return None
+
+    def find_all_previous(
+        self,
+        name: Any = None,
+        attrs: Optional[Dict[str, Any]] = None,
+        limit: int = 0,
+        **kwargs: Any,
+    ) -> "ResultSet":
+        """Find all elements before this tag in document order."""
+        if _is_simple_query(name, attrs, kwargs):
+            q = _normalize_query(name, dict(attrs or {}), kwargs)
+            nodes = self._node.find_previous_nodes(q, limit)
+            return ResultSet(self, [Tag(n) for n in nodes])
+        results: List[Tag] = []
+        for el in self.previous_elements:
+            if _matches_filter(el, name, attrs, kwargs):
+                results.append(el)  # type: ignore[arg-type]
+                if limit and len(results) >= limit:
+                    break
+        return ResultSet(self, results)
+
+    # BS4 camelCase aliases
+    findNext = find_next
+    findAllNext = find_all_next
+    findPrevious = find_previous
+    findAllPrevious = find_all_previous
+    findNextSibling = find_next_sibling
+    findNextSiblings = find_next_siblings
+    findPreviousSibling = find_previous_sibling
+    findPreviousSiblings = find_previous_siblings
 
     # ── CSS selectors ─────────────────────────────────────────────────────────
 
@@ -484,6 +1035,12 @@ class Tag:
         return Tag(p) if p is not None else None
 
     @property
+    def parents(self) -> Iterator["Tag"]:
+        """Iterator yielding each ancestor from immediate parent to document root."""
+        for n in self._node.ancestors_list():
+            yield Tag(n)
+
+    @property
     def children(self) -> Iterator[Union["Tag", NavigableString]]:
         for child in self._node.children():
             if child.is_tag():
@@ -499,10 +1056,49 @@ class Tag:
 
     @property
     def descendants(self) -> Iterator[Union["Tag", NavigableString]]:
-        for child in self.children:
-            yield child
-            if isinstance(child, Tag):
-                yield from child.descendants
+        for n in self._node.all_descendants():
+            if n.is_tag():
+                yield Tag(n)
+            else:
+                txt = n.text_content()
+                if txt:
+                    yield NavigableString(rust_node=n)
+
+    @property
+    def self_and_descendants(self) -> Iterator[Union["Tag", NavigableString]]:
+        """Yield self, then all descendants (same as BS4)."""
+        yield self
+        yield from self.descendants
+
+    @property
+    def self_and_parents(self) -> Iterator["Tag"]:
+        """Yield self, then all parent tags."""
+        yield self
+        yield from self.parents
+
+    @property
+    def self_and_next_siblings(self) -> Iterator[Union["Tag", NavigableString]]:
+        """Yield self, then all following siblings."""
+        yield self
+        yield from self.next_siblings
+
+    @property
+    def self_and_previous_siblings(self) -> Iterator[Union["Tag", NavigableString]]:
+        """Yield self, then all preceding siblings."""
+        yield self
+        yield from self.previous_siblings
+
+    @property
+    def self_and_next_elements(self) -> Iterator[Any]:
+        """Yield self, then all following elements in document order."""
+        yield self
+        yield from self.next_elements
+
+    @property
+    def self_and_previous_elements(self) -> Iterator[Any]:
+        """Yield self, then all preceding elements in document order."""
+        yield self
+        yield from self.previous_elements
 
     @property
     def next_sibling(self) -> Optional[Union["Tag", NavigableString]]:
@@ -527,6 +1123,32 @@ class Tag:
     def previous_siblings(self) -> Iterator[Union["Tag", NavigableString]]:
         for sib in self._node.prev_siblings():
             yield Tag(sib) if sib.is_tag() else NavigableString(rust_node=sib)
+
+    @property
+    def next_element(self) -> Optional[Union["Tag", NavigableString]]:
+        n = self._node.next_element_node()
+        return _wrap_node(n) if n is not None else None
+
+    @property
+    def previous_element(self) -> Optional[Union["Tag", NavigableString]]:
+        n = self._node.previous_element_node()
+        return _wrap_node(n) if n is not None else None
+
+    @property
+    def next_elements(self) -> Iterator[Any]:
+        """Iterate over all nodes following this tag in document order."""
+        nxt: Any = self.next_element
+        while nxt is not None:
+            yield nxt
+            nxt = nxt.next_element
+
+    @property
+    def previous_elements(self) -> Iterator[Any]:
+        """Iterate over all nodes preceding this tag in document order."""
+        prev: Any = self.previous_element
+        while prev is not None:
+            yield prev
+            prev = prev.previous_element
 
     # ── Rendering ─────────────────────────────────────────────────────────────
 
@@ -554,6 +1176,98 @@ class Tag:
     ) -> bytes:
         return self.decode_contents().encode(encoding)
 
+    # ── Utility ───────────────────────────────────────────────────────────────
+
+    @property
+    def hidden(self) -> bool:
+        """False for regular tags; overridden to True in Xhtml (document root)."""
+        return False
+
+    @property
+    def is_empty_element(self) -> bool:
+        """True if this is an HTML void element (br, img, hr, input, …)."""
+        return self.name.lower() in _VOID_ELEMENTS
+
+    # BS4 alias
+    isSelfClosing = is_empty_element
+
+    def get_attribute_list(self, key: str, default: Any = None) -> List[Any]:
+        """
+        Return the value of `key` as a list.
+        • class → list of class tokens
+        • Any other attribute → [value]   (or [None] if absent)
+        Mirrors BS4's Tag.get_attribute_list().
+        """
+        val = self.get(key, default)
+        if val is None:
+            return [None]
+        if isinstance(val, list):
+            return val
+        return [val]
+
+    def has_key(self, key: str) -> bool:
+        """Deprecated BS4 alias for has_attr()."""
+        return self.has_attr(key)
+
+    def getText(self, separator: str = "", strip: bool = False) -> str:
+        """BS4 alias for get_text()."""
+        return self.get_text(separator, strip)
+
+    def index(self, element: Any) -> int:
+        """
+        Return the index of `element` within this tag's .contents list.
+        Raises ValueError if the element is not a direct child.
+        """
+        for i, child in enumerate(self.contents):
+            if child == element:
+                return i
+        raise ValueError(f"{element!r} is not in the contents of {self!r}")
+
+    # ── Tree modification stubs (not yet supported) ────────────────────────────
+
+    def append(self, tag: Any) -> None:
+        raise NotImplementedError(_MUTATION_MSG)
+
+    def extend(self, tags: Iterable[Any]) -> None:
+        raise NotImplementedError(_MUTATION_MSG)
+
+    def insert(self, position: int, new_child: Any) -> None:
+        raise NotImplementedError(_MUTATION_MSG)
+
+    def insert_before(self, *args: Any) -> None:
+        raise NotImplementedError(_MUTATION_MSG)
+
+    def insert_after(self, *args: Any) -> None:
+        raise NotImplementedError(_MUTATION_MSG)
+
+    def clear(self) -> None:
+        raise NotImplementedError(_MUTATION_MSG)
+
+    def extract(self) -> "Tag":
+        raise NotImplementedError(_MUTATION_MSG)
+
+    def decompose(self) -> None:
+        raise NotImplementedError(_MUTATION_MSG)
+
+    def replace_with(self, *args: Any) -> "Tag":
+        raise NotImplementedError(_MUTATION_MSG)
+
+    def replace_with_children(self) -> "Tag":
+        raise NotImplementedError(_MUTATION_MSG)
+
+    def unwrap(self) -> "Tag":
+        raise NotImplementedError(_MUTATION_MSG)
+
+    def wrap(self, wrap_inside: Any) -> "Tag":
+        raise NotImplementedError(_MUTATION_MSG)
+
+    def smooth(self) -> None:
+        raise NotImplementedError(_MUTATION_MSG)
+
+    # BS4 camelCase mutation aliases
+    replaceWith = replace_with
+    replaceWithChildren = replace_with_children
+
     # ── Misc ──────────────────────────────────────────────────────────────────
 
     def __contains__(self, item: Any) -> bool:
@@ -577,6 +1291,25 @@ class Tag:
 
     def __bool__(self) -> bool:
         return True
+
+    def __call__(self, *args: Any, **kwargs: Any) -> "ResultSet":
+        """Shortcut: tag(...) is equivalent to tag.find_all(...)."""
+        return self.find_all(*args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        """
+        BS4-compatible attribute access:
+        ``tag.div`` returns ``tag.find("div")``, or None if not found.
+        Dunder attributes raise AttributeError normally.
+        """
+        if name.startswith("__"):
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{name}'"
+            )
+        # Delegate to find() — returns None when the tag isn't present
+        return self.find(name)
+
+
 
 
 # ─── Xhtml ────────────────────────────────────────────────────────────────
@@ -716,15 +1449,32 @@ class Xhtml(Tag):
             results_list = [t for t in results_list if _text_matches(t, text)]
         if limit:
             results_list = results_list[:limit]
-        return results_list
+        return ResultSet(self, results_list)
 
     findAll = find_all
+
+    # The document root is "hidden" (not rendered as a tag itself)
+    @property
+    def hidden(self) -> bool:  # type: ignore[override]
+        return True
+
+    # getText alias — needs explicit override so it targets Rust get_text
+    def getText(self, separator: str = "", strip: bool = False) -> str:  # type: ignore[override]
+        return self.get_text(separator, strip)
 
     def __repr__(self) -> str:
         return "<xhtml.Xhtml>"
 
     def __str__(self) -> str:
         return self._rust_doc.to_html()
+
+    def __getattr__(self, name: str) -> Any:
+        """BS4-compatible: document.title → document.find('title'), etc."""
+        if name.startswith("__"):
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{name}'"
+            )
+        return self.find(name)
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────

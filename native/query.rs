@@ -87,7 +87,7 @@ fn find_all_in_tree(
 
 // ─── Query matching ──────────────────────────────────────────────────────────
 
-fn matches_query(el: &ElementRef<'_>, query: &RustQuery) -> bool {
+pub(crate) fn matches_query(el: &ElementRef<'_>, query: &RustQuery) -> bool {
     // 1. Tag name(s)
     if !query.names.is_empty() {
         let tag = el.value().name();

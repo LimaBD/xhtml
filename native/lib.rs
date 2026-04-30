@@ -378,8 +378,242 @@ impl RustNode {
             node_id: id,
         }))
     }
+
+    // ─── Document-order navigation methods ────────────────────────────────────
+    // (free helper functions next_element_id / previous_element_id /
+    //  last_descendant_id are defined at module level after this impl block)
+
+    /// Next node in document (DFS pre) order, or None.
+    fn next_element_node(&self) -> Option<RustNode> {
+        let id = next_element_id(&self.html, self.node_id)?;
+        Some(RustNode { html: Rc::clone(&self.html), node_id: id })
+    }
+
+    /// Previous node in document (DFS pre) order, or None.
+    fn previous_element_node(&self) -> Option<RustNode> {
+        let id = previous_element_id(&self.html, self.node_id)?;
+        Some(RustNode { html: Rc::clone(&self.html), node_id: id })
+    }
+
+    /// All ancestor nodes from immediate parent up to (and including) the
+    /// ego_tree root wrapper, matching current Python .parents behaviour.
+    fn ancestors_list(&self) -> Vec<RustNode> {
+        let mut result = Vec::new();
+        let mut cur_id = self.node_id;
+        loop {
+            let node = match self.html.tree.get(cur_id) {
+                Some(n) => n,
+                None => break,
+            };
+            match node.parent() {
+                Some(parent) => {
+                    let parent_id = parent.id();
+                    result.push(RustNode { html: Rc::clone(&self.html), node_id: parent_id });
+                    cur_id = parent_id;
+                }
+                None => break,
+            }
+        }
+        result
+    }
+
+    /// All ancestor elements that match `query`.  Returns closest-first.
+    fn find_ancestors_q(&self, query: &RustQuery, limit: usize) -> Vec<RustNode> {
+        let mut result = Vec::new();
+        let mut cur_id = self.node_id;
+        loop {
+            let node = match self.html.tree.get(cur_id) {
+                Some(n) => n,
+                None => break,
+            };
+            let parent = match node.parent() {
+                Some(p) => p,
+                None => break,
+            };
+            let parent_id = parent.id();
+            // Stop at ego_tree root
+            if self.html.tree.get(parent_id).and_then(|n| n.parent()).is_none() {
+                break;
+            }
+            if let Some(parent_node) = self.html.tree.get(parent_id) {
+                if let Some(el) = ElementRef::wrap(parent_node) {
+                    if query::matches_query(&el, query) {
+                        result.push(RustNode { html: Rc::clone(&self.html), node_id: parent_id });
+                        if limit > 0 && result.len() >= limit {
+                            return result;
+                        }
+                    }
+                }
+            }
+            cur_id = parent_id;
+        }
+        result
+    }
+
+    /// All element nodes that come after `self` in document order and match
+    /// `query`.  Pass `limit = 0` for unlimited.
+    fn find_next_nodes(&self, query: &RustQuery, limit: usize) -> Vec<RustNode> {
+        let mut results = Vec::new();
+        let mut cur_id = match next_element_id(&self.html, self.node_id) {
+            Some(id) => id,
+            None => return results,
+        };
+        loop {
+            if let Some(node) = self.html.tree.get(cur_id) {
+                if let Some(el) = ElementRef::wrap(node) {
+                    if query::matches_query(&el, query) {
+                        results.push(RustNode { html: Rc::clone(&self.html), node_id: cur_id });
+                        if limit > 0 && results.len() >= limit {
+                            return results;
+                        }
+                    }
+                }
+            }
+            cur_id = match next_element_id(&self.html, cur_id) {
+                Some(id) => id,
+                None => return results,
+            };
+        }
+    }
+
+    /// All element nodes that come before `self` in document order and match
+    /// `query`.  Returns closest-first (reverse document order).
+    fn find_previous_nodes(&self, query: &RustQuery, limit: usize) -> Vec<RustNode> {
+        let mut results = Vec::new();
+        let mut cur_id = match previous_element_id(&self.html, self.node_id) {
+            Some(id) => id,
+            None => return results,
+        };
+        loop {
+            if let Some(node) = self.html.tree.get(cur_id) {
+                if let Some(el) = ElementRef::wrap(node) {
+                    if query::matches_query(&el, query) {
+                        results.push(RustNode { html: Rc::clone(&self.html), node_id: cur_id });
+                        if limit > 0 && results.len() >= limit {
+                            return results;
+                        }
+                    }
+                }
+            }
+            cur_id = match previous_element_id(&self.html, cur_id) {
+                Some(id) => id,
+                None => return results,
+            };
+        }
+    }
+
+    /// Next siblings that match `query`.  Returns in forward order.
+    fn find_next_siblings_q(&self, query: &RustQuery, limit: usize) -> Vec<RustNode> {
+        let mut results = Vec::new();
+        let mut cur_opt = self.html.tree.get(self.node_id)
+            .and_then(|n| n.next_sibling())
+            .map(|s| s.id());
+        while let Some(cur_id) = cur_opt {
+            if let Some(node) = self.html.tree.get(cur_id) {
+                if let Some(el) = ElementRef::wrap(node) {
+                    if query::matches_query(&el, query) {
+                        results.push(RustNode { html: Rc::clone(&self.html), node_id: cur_id });
+                        if limit > 0 && results.len() >= limit {
+                            return results;
+                        }
+                    }
+                }
+            }
+            cur_opt = self.html.tree.get(cur_id)
+                .and_then(|n| n.next_sibling())
+                .map(|s| s.id());
+        }
+        results
+    }
+
+    /// Previous siblings that match `query`.  Returns closest-first.
+    fn find_prev_siblings_q(&self, query: &RustQuery, limit: usize) -> Vec<RustNode> {
+        let mut results = Vec::new();
+        let mut cur_opt = self.html.tree.get(self.node_id)
+            .and_then(|n| n.prev_sibling())
+            .map(|s| s.id());
+        while let Some(cur_id) = cur_opt {
+            if let Some(node) = self.html.tree.get(cur_id) {
+                if let Some(el) = ElementRef::wrap(node) {
+                    if query::matches_query(&el, query) {
+                        results.push(RustNode { html: Rc::clone(&self.html), node_id: cur_id });
+                        if limit > 0 && results.len() >= limit {
+                            return results;
+                        }
+                    }
+                }
+            }
+            cur_opt = self.html.tree.get(cur_id)
+                .and_then(|n| n.prev_sibling())
+                .map(|s| s.id());
+        }
+        results
+    }
+
+    /// All descendant nodes (elements and text) in DFS pre-order.
+    /// Used by the Python layer for callable-filter searches.
+    fn all_descendants(&self) -> Vec<RustNode> {
+        let mut results = Vec::new();
+        let seed: Vec<NodeId> = self.html.tree.get(self.node_id)
+            .map(|n| n.children().map(|c| c.id()).collect::<Vec<_>>())
+            .unwrap_or_default();
+        let mut stack: Vec<NodeId> = seed.into_iter().rev().collect();
+        while let Some(id) = stack.pop() {
+            results.push(RustNode { html: Rc::clone(&self.html), node_id: id });
+            let children: Vec<NodeId> = self.html.tree.get(id)
+                .map(|n| n.children().map(|c| c.id()).collect::<Vec<_>>())
+                .unwrap_or_default();
+            stack.extend(children.into_iter().rev());
+        }
+        results
+    }
+}
+// ─── Document-order traversal helpers (free functions) ──────────────────────────
+// (Defined after the impl block; Rust allows module-level forward references.)
+
+/// Next node in DFS pre-order after `id`.  Returns None at end of document.
+fn next_element_id(html: &Html, id: NodeId) -> Option<NodeId> {
+    let node = html.tree.get(id)?;
+    if let Some(child) = node.first_child() {
+        return Some(child.id());
+    }
+    let mut cur_id = id;
+    loop {
+        let cur = html.tree.get(cur_id)?;
+        if let Some(sib) = cur.next_sibling() {
+            return Some(sib.id());
+        }
+        match cur.parent() {
+            Some(parent) => cur_id = parent.id(),
+            None => return None,
+        }
+    }
 }
 
+/// Previous node in DFS pre-order before `id`.  Returns None at start of document.
+fn previous_element_id(html: &Html, id: NodeId) -> Option<NodeId> {
+    let node = html.tree.get(id)?;
+    if let Some(prev_sib) = node.prev_sibling() {
+        return Some(last_descendant_id(html, prev_sib.id()));
+    }
+    let parent = node.parent()?;
+    let parent_id = parent.id();
+    if html.tree.get(parent_id).and_then(|n| n.parent()).is_none() {
+        return None;
+    }
+    Some(parent_id)
+}
+
+/// Deepest last descendant of node at `start` (last leaf in pre-order).
+fn last_descendant_id(html: &Html, start: NodeId) -> NodeId {
+    let mut cur = start;
+    loop {
+        match html.tree.get(cur).and_then(|n| n.last_child()) {
+            Some(child) => cur = child.id(),
+            None => return cur,
+        }
+    }
+}
 // ─── RustQuery ───────────────────────────────────────────────────────────────
 
 #[pymethods]

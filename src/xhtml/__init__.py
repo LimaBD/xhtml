@@ -12,8 +12,8 @@ Parse HTML, search the tree, and extract structured data:
 For structured extraction, see :mod:`xhtml.extract`.
 """
 
-from xhtml.element import Xhtml, Tag, NavigableString
+from xhtml.element import Xhtml, Tag, NavigableString, ResultSet
 
-__all__ = ["Xhtml", "Tag", "NavigableString"]
+__all__ = ["Xhtml", "Tag", "NavigableString", "ResultSet"]
 __version__ = "0.1.0"
 __author__ = "xhtml contributors"
