@@ -9,6 +9,9 @@
 
 ## You built a fast data pipeline. Then you added an HTML parser.
 
+> **xhtml is ~33× faster than BeautifulSoup4** with a drop-in compatible API.
+
+
 AI pipelines today scrape thousands — sometimes millions — of pages to feed context into agents, build knowledge bases, run competitive intelligence, and power real-time decision making. The HTTP layer? Async, concurrent, non-blocking. Your infrastructure? Horizontally scaled.
 
 **Then your agent hands the raw HTML to a pure-Python parser, and the whole pipeline grinds to a halt.**
@@ -40,7 +43,7 @@ summary = soup.find("p", class_="intro").get_text(strip=True)
 
 `xhtml` is a Python library for parsing and querying HTML/XML, built for developers who cannot afford the performance tax of pure-Python parsing engines. It exposes the same clean, ergonomic API you already know — while a **Rust engine** handles every byte underneath.
 
-Already using BeautifulSoup or another Python parser? xhtml is a **single-import swap** — see [Migration](#migration).
+Already using BeautifulSoup4 or another Python parser? xhtml is a **single-import swap** — 33× faster, identical API. See [Migration](#migration).
 
 ---
 
