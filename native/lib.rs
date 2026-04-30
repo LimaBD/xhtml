@@ -406,11 +406,7 @@ impl RustNode {
     fn ancestors_list(&self) -> Vec<RustNode> {
         let mut result = Vec::new();
         let mut cur_id = self.node_id;
-        loop {
-            let node = match self.html.tree.get(cur_id) {
-                Some(n) => n,
-                None => break,
-            };
+        while let Some(node) = self.html.tree.get(cur_id) {
             match node.parent() {
                 Some(parent) => {
                     let parent_id = parent.id();
@@ -430,11 +426,7 @@ impl RustNode {
     fn find_ancestors_q(&self, query: &RustQuery, limit: usize) -> Vec<RustNode> {
         let mut result = Vec::new();
         let mut cur_id = self.node_id;
-        loop {
-            let node = match self.html.tree.get(cur_id) {
-                Some(n) => n,
-                None => break,
-            };
+        while let Some(node) = self.html.tree.get(cur_id) {
             let parent = match node.parent() {
                 Some(p) => p,
                 None => break,
@@ -649,9 +641,7 @@ fn previous_element_id(html: &Html, id: NodeId) -> Option<NodeId> {
     }
     let parent = node.parent()?;
     let parent_id = parent.id();
-    if html.tree.get(parent_id).and_then(|n| n.parent()).is_none() {
-        return None;
-    }
+    html.tree.get(parent_id).and_then(|n| n.parent())?;
     Some(parent_id)
 }
 
